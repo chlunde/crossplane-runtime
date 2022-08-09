@@ -25,6 +25,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/feature"
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/pkg/ratelimiter"
+	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 )
 
 // DefaultOptions returns a functional set of options with conservative
@@ -35,6 +36,7 @@ func DefaultOptions() Options {
 		GlobalRateLimiter:       ratelimiter.NewGlobal(1),
 		PollInterval:            1 * time.Minute,
 		MaxConcurrentReconciles: 1,
+		MetricsReconciler:       managed.NewNopMetricsReconciler(),
 		Features:                &feature.Flags{},
 	}
 }
@@ -54,6 +56,9 @@ type Options struct {
 
 	// MaxConcurrentReconciles for each controller.
 	MaxConcurrentReconciles int
+
+	// MetricsReconciler reconciles metrics for managed resource controllers
+	MetricsReconciler managed.MetricsReconciler
 
 	// Features that should be enabled.
 	Features *feature.Flags

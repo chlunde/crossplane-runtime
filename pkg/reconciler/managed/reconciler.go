@@ -454,6 +454,8 @@ type Reconciler struct {
 	external mrExternal
 	managed  mrManaged
 
+	metrics MetricsReconciler
+
 	log    logging.Logger
 	record event.Recorder
 }
@@ -596,6 +598,13 @@ func WithRecorder(er event.Recorder) ReconcilerOption {
 	}
 }
 
+// WithMetricsReconciler specifies how the Reconciler should collect metrics.
+func WithMetricsReconciler(m MetricsReconciler) ReconcilerOption {
+	return func(r *Reconciler) {
+		r.metrics = m
+	}
+}
+
 // NewReconciler returns a Reconciler that reconciles managed resources of the
 // supplied ManagedKind with resources in an external system such as a cloud
 // provider API. It panics if asked to reconcile a managed resource kind that is
@@ -622,6 +631,7 @@ func NewReconciler(m manager.Manager, of resource.ManagedKind, o ...ReconcilerOp
 		external:            defaultMRExternal(),
 		log:                 logging.NewNopLogger(),
 		record:              event.NewNopRecorder(),
+		metrics:             NewNopMetricsReconciler(),
 	}
 
 	for _, ro := range o {
@@ -654,6 +664,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		log.Debug("Cannot get managed resource", "error", err)
 		return reconcile.Result{}, errors.Wrap(resource.IgnoreNotFound(err), errGetManaged)
 	}
+
+	defer r.metrics.ReconcileMetrics(req, managed)
 
 	record := r.record.WithAnnotations("external-name", meta.GetExternalName(managed))
 	log = log.WithValues(
