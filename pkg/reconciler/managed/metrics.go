@@ -30,24 +30,24 @@ import (
 var (
 	managedStatusSynced = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "managed_status_synced",
+			Name: "managed_resource_status_synced",
 			Help: "Managed resources is synced",
 		},
-		[]string{"kind", "name"},
+		[]string{"group", "kind", "name", "claim_name", "claim_namespace"},
 	)
 	managedStatusReady = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "managed_status_ready",
+			Name: "managed_resource_status_ready",
 			Help: "Managed resources is ready",
 		},
-		[]string{"kind", "name"},
+		[]string{"group", "kind", "name", "claim_name", "claim_namespace"},
 	)
 	managedStatusDeleting = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "managed_status_deleting",
-			Help: "Managed resources is deleting",
+			Name: "managed_resource_status_deleting",
+			Help: "Managed resources is being deleted",
 		},
-		[]string{"kind", "name"},
+		[]string{"group", "kind", "name", "claim_name", "claim_namespace"},
 	)
 )
 
@@ -74,9 +74,17 @@ func NewPrometheusMetricsReconciler(registry metrics.RegistererGatherer) prometh
 
 type prometheusMetricsReconciler struct{}
 
+const (
+	LabelKeyClaimName      = "crossplane.io/claim-name"
+	LabelKeyClaimNamespace = "crossplane.io/claim-namespace"
+)
+
 func (p prometheusMetricsReconciler) ReconcileMetrics(req reconcile.Request, managed resource.Managed) {
+	group := managed.GetObjectKind().GroupVersionKind().Group
 	kind := managed.GetObjectKind().GroupVersionKind().Kind
 	name := managed.GetName()
+	claimName := managed.GetLabels()[LabelKeyClaimName]
+	claimNamespace := managed.GetLabels()[LabelKeyClaimNamespace]
 
 	ready := managed.GetCondition(xpv1.TypeReady).Status
 	synced := managed.GetCondition(xpv1.TypeSynced).Status
@@ -104,7 +112,7 @@ func (p prometheusMetricsReconciler) ReconcileMetrics(req reconcile.Request, man
 		},
 	}
 
-	labelValues := []string{kind, name}
+	labelValues := []string{group, kind, name, claimName, claimNamespace}
 
 	// attempt to clean up metrics for objects that will cease to
 	// exist when the API server will run garbage collection
