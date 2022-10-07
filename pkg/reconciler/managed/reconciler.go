@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -42,8 +43,9 @@ const (
 	reconcileGracePeriod = 30 * time.Second
 	reconcileTimeout     = 1 * time.Minute
 
-	defaultpollInterval = 1 * time.Minute
-	defaultGracePeriod  = 30 * time.Second
+	defaultpollInterval       = 1 * time.Minute
+	defaultStablePollInterval = 3 * time.Minute
+	defaultGracePeriod        = 30 * time.Second
 )
 
 // Error strings.
@@ -444,6 +446,7 @@ type Reconciler struct {
 	newManaged func() resource.Managed
 
 	pollInterval        time.Duration
+	stablePollInterval  time.Duration
 	timeout             time.Duration
 	creationGracePeriod time.Duration
 
@@ -504,20 +507,42 @@ func WithTimeout(duration time.Duration) ReconcilerOption {
 	}
 }
 
-// WithPollInterval specifies how long the Reconciler should wait before queueing
-// a new reconciliation after a successful reconcile. The Reconciler requeues
-// after a specified duration when it is not actively waiting for an external
-// operation, but wishes to check whether an existing external resource needs to
-// be synced to its Crossplane Managed resource.
+// WithPollInterval specifies how long the Reconciler should wait
+// before queueing a new reconciliation after a successful reconcile
+// when the resource is not ready or synced. The Reconciler requeues
+// after a specified duration when it is not actively waiting for an
+// external operation, but wishes to check whether an existing
+// external resource needs to be synced to its Crossplane Managed
+// resource.
 func WithPollInterval(after time.Duration) ReconcilerOption {
 	return func(r *Reconciler) {
 		r.pollInterval = after
+
+		// for backwards compatibility and reasonable behaviour,
+		// ensure that running with --poll 10m does not have a stable
+		// poll interval shorter than the default poll interval
+		if r.pollInterval > r.stablePollInterval {
+			r.stablePollInterval = after
+		}
+	}
+}
+
+// WithStablePollInterval specifies how long the Reconciler should
+// wait before queueing a new reconciliation after a successful
+// reconcile when the resource is stable (ready and synced). The
+// Reconciler requeues after a specified duration when it is not
+// actively waiting for an external operation, but wishes to check
+// whether an existing external resource needs to be synced to its
+// Crossplane Managed resource.
+func WithStablePollInterval(after time.Duration) ReconcilerOption {
+	return func(r *Reconciler) {
+		r.stablePollInterval = after
 	}
 }
 
 // WithCreationGracePeriod configures an optional period during which we will
 // wait for the external API to report that a newly created external resource
-// exists. This allows us to tolerate eventually consistent APIs that do not
+// exists. This allows us to tolerate eventually conszistent APIs that do not
 // immediately report that newly created resources exist when queried. All
 // resources have a 30 second grace period by default.
 func WithCreationGracePeriod(d time.Duration) ReconcilerOption {
@@ -625,6 +650,7 @@ func NewReconciler(m manager.Manager, of resource.ManagedKind, o ...ReconcilerOp
 		client:              m.GetClient(),
 		newManaged:          nm,
 		pollInterval:        defaultpollInterval,
+		stablePollInterval:  defaultStablePollInterval,
 		creationGracePeriod: defaultGracePeriod,
 		timeout:             reconcileTimeout,
 		managed:             defaultMRManaged(m),
@@ -992,9 +1018,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		// after the specified poll interval in order to observe it and react
 		// accordingly.
 		// https://github.com/crossplane/crossplane/issues/289
-		log.Debug("External resource is up to date", "requeue-after", time.Now().Add(r.pollInterval))
 		managed.SetConditions(xpv1.ReconcileSuccess())
-		return reconcile.Result{RequeueAfter: r.pollInterval}, errors.Wrap(r.client.Status().Update(ctx, managed), errUpdateManagedStatus)
+		log.Debug("External resource is up to date", "requeue-after", time.Now().Add(r.getPollInterval(managed)))
+		return reconcile.Result{RequeueAfter: r.getPollInterval(managed)}, errors.Wrap(r.client.Status().Update(ctx, managed), errUpdateManagedStatus)
 	}
 
 	if observation.Diff != "" {
@@ -1029,8 +1055,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	// changes, so we requeue a speculative reconcile after the specified poll
 	// interval in order to observe it and react accordingly.
 	// https://github.com/crossplane/crossplane/issues/289
-	log.Debug("Successfully requested update of external resource", "requeue-after", time.Now().Add(r.pollInterval))
-	record.Event(managed, event.Normal(reasonUpdated, "Successfully requested update of external resource"))
 	managed.SetConditions(xpv1.ReconcileSuccess())
-	return reconcile.Result{RequeueAfter: r.pollInterval}, errors.Wrap(r.client.Status().Update(ctx, managed), errUpdateManagedStatus)
+	log.Debug("Successfully requested update of external resource", "requeue-after", time.Now().Add(r.getPollInterval(managed)))
+	record.Event(managed, event.Normal(reasonUpdated, "Successfully requested update of external resource"))
+	return reconcile.Result{RequeueAfter: r.getPollInterval(managed)}, errors.Wrap(r.client.Status().Update(ctx, managed), errUpdateManagedStatus)
+}
+
+func (r *Reconciler) getPollInterval(managed resource.Managed) time.Duration {
+	if managed.GetCondition(xpv1.TypeReady).Status == v1.ConditionTrue && managed.GetCondition(xpv1.TypeSynced).Status == v1.ConditionTrue {
+		return r.stablePollInterval
+	}
+
+	return r.pollInterval
 }

@@ -8,6 +8,7 @@ require (
 	github.com/hashicorp/go-getter v1.4.0
 	github.com/hashicorp/vault/api v1.3.1
 	github.com/imdario/mergo v0.3.12
+	github.com/prometheus/client_golang v1.11.0
 	github.com/spf13/afero v1.8.0
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
 	k8s.io/api v0.23.0
@@ -85,7 +86,6 @@ require (
 	github.com/oklog/run v1.0.0 // indirect
 	github.com/pierrec/lz4 v2.5.2+incompatible // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/prometheus/client_golang v1.11.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.28.0 // indirect
 	github.com/prometheus/procfs v0.6.0 // indirect

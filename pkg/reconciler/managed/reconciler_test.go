@@ -41,6 +41,13 @@ import (
 
 var _ reconcile.Reconciler = &Reconciler{}
 
+func withCondition(condition xpv1.Condition) func(obj client.Object) error {
+	return func(obj client.Object) error {
+		mg := obj.(*fake.Managed)
+		mg.SetConditions(condition)
+		return nil
+	}
+}
 func TestReconciler(t *testing.T) {
 	type args struct {
 		m  manager.Manager
@@ -291,9 +298,10 @@ func TestReconciler(t *testing.T) {
 			args: args{
 				m: &fake.Manager{
 					Client: &test.MockClient{
-						MockGet: test.NewMockGetFn(nil),
+						MockGet: test.NewMockGetFn(nil, withCondition(xpv1.Available())),
 						MockStatusUpdate: test.MockStatusUpdateFn(func(_ context.Context, obj client.Object, _ ...client.UpdateOption) error {
 							want := &fake.Managed{}
+							want.SetConditions(xpv1.Available())
 							want.SetConditions(xpv1.ReconcileSuccess())
 							if diff := cmp.Diff(want, obj, test.EquateConditions()); diff != "" {
 								reason := "A successful no-op reconcile should be reported as a conditioned status."
@@ -323,7 +331,7 @@ func TestReconciler(t *testing.T) {
 					WithFinalizer(resource.FinalizerFns{AddFinalizerFn: func(_ context.Context, _ resource.Object) error { return nil }}),
 				},
 			},
-			want: want{result: reconcile.Result{RequeueAfter: defaultpollInterval}},
+			want: want{result: reconcile.Result{RequeueAfter: defaultStablePollInterval}},
 		},
 		"ExternalObserveError": {
 			reason: "Errors observing the external resource should trigger a requeue after a short wait.",
@@ -919,9 +927,10 @@ func TestReconciler(t *testing.T) {
 			args: args{
 				m: &fake.Manager{
 					Client: &test.MockClient{
-						MockGet: test.NewMockGetFn(nil),
+						MockGet: test.NewMockGetFn(nil, withCondition(xpv1.Available())),
 						MockStatusUpdate: test.MockStatusUpdateFn(func(_ context.Context, obj client.Object, _ ...client.UpdateOption) error {
 							want := &fake.Managed{}
+							want.SetConditions(xpv1.Available())
 							want.SetConditions(xpv1.ReconcileSuccess())
 							if diff := cmp.Diff(want, obj, test.EquateConditions()); diff != "" {
 								reason := "A successful no-op reconcile should be reported as a conditioned status."
@@ -948,7 +957,7 @@ func TestReconciler(t *testing.T) {
 					WithFinalizer(resource.FinalizerFns{AddFinalizerFn: func(_ context.Context, _ resource.Object) error { return nil }}),
 				},
 			},
-			want: want{result: reconcile.Result{RequeueAfter: defaultpollInterval}},
+			want: want{result: reconcile.Result{RequeueAfter: defaultStablePollInterval}},
 		},
 		"UpdateExternalError": {
 			reason: "Errors while updating an external resource should trigger a requeue after a short wait.",
@@ -1039,14 +1048,48 @@ func TestReconciler(t *testing.T) {
 			},
 			want: want{result: reconcile.Result{Requeue: true}},
 		},
+		"UpdateSuccessfulNotReady": {
+			reason: "A successful managed resource update with the external resource not ready, should trigger short wait",
+			args: args{
+				m: &fake.Manager{
+					Client: &test.MockClient{
+						MockGet: test.NewMockGetFn(nil, withCondition(xpv1.Creating())),
+						MockStatusUpdate: test.MockStatusUpdateFn(func(_ context.Context, obj client.Object, _ ...client.UpdateOption) error {
+							return nil
+						}),
+					},
+					Scheme: fake.SchemeWith(&fake.Managed{}),
+				},
+				mg: resource.ManagedKind(fake.GVK(&fake.Managed{})),
+				o: []ReconcilerOption{
+					WithInitializers(),
+					WithReferenceResolver(ReferenceResolverFn(func(_ context.Context, _ resource.Managed) error { return nil })),
+					WithExternalConnecter(ExternalConnectorFn(func(_ context.Context, mg resource.Managed) (ExternalClient, error) {
+						c := &ExternalClientFns{
+							ObserveFn: func(_ context.Context, _ resource.Managed) (ExternalObservation, error) {
+								return ExternalObservation{ResourceExists: true, ResourceUpToDate: false}, nil
+							},
+							UpdateFn: func(_ context.Context, _ resource.Managed) (ExternalUpdate, error) {
+								return ExternalUpdate{}, nil
+							},
+						}
+						return c, nil
+					})),
+					WithConnectionPublishers(),
+					WithFinalizer(resource.FinalizerFns{AddFinalizerFn: func(_ context.Context, _ resource.Object) error { return nil }}),
+				},
+			},
+			want: want{result: reconcile.Result{RequeueAfter: defaultpollInterval}},
+		},
 		"UpdateSuccessful": {
 			reason: "A successful managed resource update should trigger a requeue after a long wait.",
 			args: args{
 				m: &fake.Manager{
 					Client: &test.MockClient{
-						MockGet: test.NewMockGetFn(nil),
+						MockGet: test.NewMockGetFn(nil, withCondition(xpv1.Available())),
 						MockStatusUpdate: test.MockStatusUpdateFn(func(_ context.Context, obj client.Object, _ ...client.UpdateOption) error {
 							want := &fake.Managed{}
+							want.SetConditions(xpv1.Available())
 							want.SetConditions(xpv1.ReconcileSuccess())
 							if diff := cmp.Diff(want, obj, test.EquateConditions()); diff != "" {
 								reason := "A successful managed resource update should be reported as a conditioned status."
@@ -1076,7 +1119,7 @@ func TestReconciler(t *testing.T) {
 					WithFinalizer(resource.FinalizerFns{AddFinalizerFn: func(_ context.Context, _ resource.Object) error { return nil }}),
 				},
 			},
-			want: want{result: reconcile.Result{RequeueAfter: defaultpollInterval}},
+			want: want{result: reconcile.Result{RequeueAfter: defaultStablePollInterval}},
 		},
 	}
 
