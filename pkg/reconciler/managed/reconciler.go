@@ -1019,7 +1019,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		// accordingly.
 		// https://github.com/crossplane/crossplane/issues/289
 		managed.SetConditions(xpv1.ReconcileSuccess())
-		log.Debug("External resource is up to date", "requeue-after", time.Now().Add(r.getPollInterval(managed)))
+		log.Debug("External resource is up to date", "requeue-after", r.getPollInterval(managed))
 		return reconcile.Result{RequeueAfter: r.getPollInterval(managed)}, errors.Wrap(r.client.Status().Update(ctx, managed), errUpdateManagedStatus)
 	}
 
@@ -1056,7 +1056,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	// interval in order to observe it and react accordingly.
 	// https://github.com/crossplane/crossplane/issues/289
 	managed.SetConditions(xpv1.ReconcileSuccess())
-	log.Debug("Successfully requested update of external resource", "requeue-after", time.Now().Add(r.getPollInterval(managed)))
+	log.Debug("Successfully requested update of external resource", "requeue-after", r.getPollInterval(managed))
 	record.Event(managed, event.Normal(reasonUpdated, "Successfully requested update of external resource"))
 	return reconcile.Result{RequeueAfter: r.getPollInterval(managed)}, errors.Wrap(r.client.Status().Update(ctx, managed), errUpdateManagedStatus)
 }
