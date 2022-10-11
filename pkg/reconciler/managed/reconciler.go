@@ -44,7 +44,7 @@ const (
 	reconcileTimeout     = 1 * time.Minute
 
 	defaultpollInterval       = 1 * time.Minute
-	defaultStablePollInterval = 3 * time.Minute
+	defaultStablePollInterval = 10 * time.Minute
 	defaultGracePeriod        = 30 * time.Second
 )
 
